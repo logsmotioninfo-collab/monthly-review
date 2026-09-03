@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<!--
+  ============================================================
+  セットアップ手順(初回のみ):
+  1) https://console.firebase.google.com で無料プロジェクトを作成
+  2) 左メニュー「Firestore Database」→ データベースを作成(本番モードでOK)
+  3) Firestoreの「ルール」タブを以下に書き換えて公開:
+       rules_version = '2';
+       service cloud.firestore {
+         match /databases/{database}/documents {
+           match /rooms/{roomId}/{document=**} {
+             allow read, write: if true;
+           }
+         }
+       }
+     ※チーム内限定ツール向けの簡易設定です。リンク(Firebase設定)を知っていれば
+       誰でも読み書きできる点にご注意ください。
+  4) プロジェクト設定(⚙アイコン)→「全般」→ 下部の「マイアプリ」で
+     ウェブアプリを追加し、表示された firebaseConfig の値を
+     下の window.FIREBASE_CONFIG にそのまま貼り付ける
+  5) このファイルをGitHub PagesなどにアップロードすればURLが発行されます
+  ============================================================
+-->
+<script>
+  window.FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAf5O7Mc1MZpmfouGjZktw0qNkzwWMpEm0",
+    authDomain: "monthly-review-80852.firebaseapp.com",
+    projectId: "monthly-review-80852",
+    storageBucket: "monthly-review-80852.firebasestorage.app",
+    messagingSenderId: "872973157480",
+    appId: "1:872973157480:web:2fa3d2bf9bf3a61d8567dd"
+  };
+  // 同じFirebaseプロジェクトを複数の振り返り帳で使い回したい場合はここを変更してください
+  window.ROOM_ID = "default";
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>半月次 振り返り帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EDF0E7;
+    --paper-deep:#E3E8DC;
+    --ink:#1E2A22;
+    --ink-soft:#4B5A4E;
+    --rule:#B9C2AE;
+    --stamp-red:#9C3B2E;
+    --green-ok:#3C6B4B;
+    --amber:#A97A1F;
+    --gray:#8A8F84;
+    --card:#F5F7F0;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"IBM Plex Sans JP", sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .sheet{
+    max-width:880px;
+    margin:0 auto;
+    padding:48px 32px 120px;
+  }
+
+  /* ---------- Header ---------- */
+  .masthead{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:3px double var(--ink);
+    padding-bottom:18px;
+    margin-bottom:6px;
+    gap:20px;
+  }
+  .masthead .eyebrow{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    letter-spacing:.12em;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    margin:0 0 6px;
+  }
+  #projName{
+    font-family:"Fraunces", serif;
+    font-optical-sizing:auto;
+    font-weight:600;
+    font-size:34px;
+    letter-spacing:-.01em;
+    border:none;
+    background:transparent;
+    color:var(--ink);
+    padding:0;
+    width:100%;
+  }
+  .masthead .period{
+    text-align:right;
+    flex:none;
+  }
+  .masthead .period .label{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    letter-spacing:.08em;
+  }
+  .period-row{ display:flex; align-items:baseline; gap:8px; justify-content:flex-end; }
+  .masthead .period select{
+    appearance:none;
+    background:transparent;
+    border:none;
+    font-family:"Fraunces", serif;
+    font-weight:600;
+    font-size:22px;
+    color:var(--ink);
+    text-align:right;
+    padding:2px 0;
+    border-bottom:1px solid var(--ink);
+    cursor:pointer;
+  }
+  .masthead .period select:focus-visible{outline:2px solid var(--stamp-red); outline-offset:3px;}
+
+  .subline{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    margin:8px 0 30px;
+    letter-spacing:.03em;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .toolbar{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* ---------- Buttons (editing chrome) ---------- */
+  .btn{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    letter-spacing:.03em;
+    background:var(--card);
+    border:1px solid var(--rule);
+    color:var(--ink);
+    padding:6px 10px;
+    border-radius:3px;
+    cursor:pointer;
+  }
+  .btn:hover{border-color:var(--ink);}
+  .btn:focus-visible{outline:2px solid var(--stamp-red); outline-offset:2px;}
+  .btn.ghost-small{padding:2px 7px; font-size:10px;}
+  .del-btn{
+    border:none; background:transparent; color:var(--gray);
+    font-family:"IBM Plex Mono", monospace; font-size:13px; cursor:pointer;
+    padding:2px 4px; line-height:1;
+  }
+  .del-btn:hover{color:var(--stamp-red);}
+  .add-row-btn{
+    margin-top:8px;
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11.5px;
+    color:var(--ink-soft);
+    background:none;
+    border:1px dashed var(--rule);
+    border-radius:3px;
+    padding:6px 10px;
+    cursor:pointer;
+    width:100%;
+    text-align:left;
+  }
+  .add-row-btn:hover{border-color:var(--ink); color:var(--ink);}
+
+  .save-bar{
+    position:fixed;
+    right:24px;
+    bottom:24px;
+    display:flex;
+    gap:10px;
+    align-items:center;
+    background:#fff;
+    border:1px solid var(--rule);
+    border-radius:30px;
+    padding:8px 10px 8px 16px;
+    box-shadow:0 6px 20px rgba(30,42,34,.12);
+    z-index:50;
+  }
+  .save-bar .hint{ font-family:"IBM Plex Mono", monospace; font-size:10.5px; color:var(--ink-soft); }
+  .save-bar .btn.primary{
+    background:var(--ink); color:#fff; border-color:var(--ink); font-weight:600; padding:8px 16px; border-radius:20px;
+  }
+  .save-bar .btn.primary:hover{ background:#132018; }
+  .save-bar .btn.ghost2{ background:transparent; }
+
+  .sync-dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--gray); flex:none;
+    transition:background .2s;
+  }
+  .sync-dot.saving{ background:var(--amber); }
+  .sync-dot.saved{ background:var(--green-ok); }
+  .sync-dot.error{ background:var(--stamp-red); }
+  .sync-dot.dirty{ background:var(--amber); }
+
+  .shared-note{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:10.5px;
+    color:var(--ink-soft);
+    display:flex; align-items:center; gap:6px;
+  }
+
+  .banner{
+    background:#F3E9CF;
+    border:1px solid #D9C489;
+    color:#6B5518;
+    font-size:12.5px;
+    padding:10px 14px;
+    border-radius:3px;
+    margin-bottom:20px;
+    line-height:1.6;
+  }
+  .banner.error{ background:#F1E1DC; border-color:#D9A392; color:#7A2E22; }
+  .banner strong{ font-weight:700; }
+
+  /* ---------- Section labels ---------- */
+  .section-label{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:38px 0 14px;
+  }
+  .section-label::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--rule);
+  }
+
+  /* ---------- Overall verdict banner ---------- */
+  .verdict-band{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background:var(--card);
+    border:1px solid var(--rule);
+    border-radius:2px;
+    padding:16px 20px;
+    margin-bottom:8px;
+  }
+  .verdict-band .vb-text .vb-title{
+    font-size:13px;
+    color:var(--ink-soft);
+    margin-bottom:2px;
+  }
+  .verdict-band .vb-text .vb-sub{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:12px;
+    color:var(--ink-soft);
+  }
+
+  /* ---------- Stamp ---------- */
+  .stamp{
+    --c: var(--stamp-red);
+    width:58px;height:58px;
+    border-radius:50%;
+    border:2.5px solid var(--c);
+    color:var(--c);
+    display:flex;align-items:center;justify-content:center;
+    font-family:"Fraunces", serif;
+    font-weight:700;
+    font-size:26px;
+    transform:rotate(-9deg);
+    position:relative;
+    flex:none;
+    mix-blend-mode:multiply;
+  }
+  .stamp::before{
+    content:"";
+    position:absolute;
+    inset:6px;
+    border:1px solid var(--c);
+    border-radius:50%;
+    opacity:.55;
+  }
+  .stamp.small{width:38px;height:38px;font-size:16px;border-width:2px;}
+  .stamp.ok{--c:var(--green-ok);}
+  .stamp.warn{--c:var(--amber);}
+  .stamp.bad{--c:var(--stamp-red);}
+  .stamp.none{--c:var(--gray);}
+
+  /* ---------- KPI ledger table ---------- */
+  .ledger{
+    width:100%;
+    border-collapse:collapse;
+    font-family:"IBM Plex Mono", monospace;
+  }
+  .ledger thead th{
+    text-align:right;
+    font-family:"IBM Plex Sans JP", sans-serif;
+    font-weight:500;
+    font-size:12px;
+    color:var(--ink-soft);
+    border-bottom:1px solid var(--ink);
+    padding:0 0 8px;
+  }
+  .ledger thead th:first-child{text-align:left;}
+  .ledger tbody td{
+    text-align:right;
+    padding:10px 0;
+    border-bottom:1px solid var(--rule);
+    font-size:15px;
+    white-space:nowrap;
+  }
+  .ledger tbody td:first-child{
+    text-align:left;
+    font-family:"IBM Plex Sans JP", sans-serif;
+    font-weight:600;
+    font-size:14px;
+    white-space:normal;
+  }
+  .ledger .diff.pos{color:var(--green-ok);}
+  .ledger .diff.neg{color:var(--stamp-red);}
+  .ledger .stampcell{width:44px; padding-left:10px;}
+  .ledger .delcell{width:24px; padding-left:4px;}
+  .rate-cell{position:relative; padding-right:4px !important;}
+  .rate-track{
+    display:inline-block;
+    position:relative;
+    width:70px;
+    height:5px;
+    background:var(--rule);
+    vertical-align:middle;
+    margin-right:8px;
+    border-radius:2px;
+  }
+  .rate-fill{
+    position:absolute; left:0; top:0; height:100%;
+    background:var(--ink);
+    border-radius:2px;
+  }
+  .rate-fill.ok{background:var(--green-ok);}
+  .rate-fill.warn{background:var(--amber);}
+  .rate-fill.bad{background:var(--stamp-red);}
+  .rate-num{display:inline-block; width:52px; text-align:right;}
+
+  .kpi-note{
+    font-size:11px;
+    color:var(--ink-soft);
+    font-family:"IBM Plex Mono", monospace;
+    margin-top:8px;
+  }
+
+  /* editable inputs inside ledger / lists */
+  input.field, select.field{
+    font:inherit;
+    background:transparent;
+    border:none;
+    border-bottom:1px dashed transparent;
+    color:inherit;
+    padding:2px 0;
+  }
+  input.field:hover, select.field:hover{ border-bottom-color:var(--rule); }
+  input.field:focus, select.field:focus{ outline:none; border-bottom-color:var(--stamp-red); }
+  input.num-field{ width:88px; text-align:right; }
+  input.name-field{ width:100%; font-family:"IBM Plex Sans JP", sans-serif; font-weight:600; font-size:14px; }
+
+  /* ---------- Two column: issues / tasks ---------- */
+  .two-col{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:28px;
+  }
+  @media (max-width:680px){
+    .two-col{grid-template-columns:1fr;}
+  }
+
+  .card-list{list-style:none; margin:0; padding:0;}
+  .issue-row, .task-row{
+    padding:10px 0;
+    border-bottom:1px solid var(--rule);
+  }
+  .row-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+  }
+  .row-top .name-input{font-weight:600; font-size:13.5px;}
+  .pill-select{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:10.5px;
+    padding:2px 8px;
+    border-radius:20px;
+    white-space:nowrap;
+    letter-spacing:.03em;
+    border:none;
+    cursor:pointer;
+  }
+  .pill-select.todo{background:#F1E1DC; color:var(--stamp-red);}
+  .pill-select.wip{background:#F3E9CF; color:var(--amber);}
+  .pill-select.hold{background:#E7E8E3; color:var(--gray);}
+  .pill-select.done{background:#DCE8DF; color:var(--green-ok);}
+  .pill-select.late{background:#F1E1DC; color:var(--stamp-red);}
+  .row-meta{ margin-top:5px; }
+  .row-meta input.field{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    width:100%;
+  }
+
+  .task-progress{
+    display:flex; align-items:center; gap:8px; margin-top:6px;
+  }
+  .track{flex:1; height:6px; background:var(--rule); border-radius:3px; overflow:hidden;}
+  .fill{height:100%; background:var(--ink);}
+  .fill.late{background:var(--stamp-red);}
+  .fill.done{background:var(--green-ok);}
+  input.pct-input{
+    font-family:"IBM Plex Mono", monospace; font-size:11px; width:40px; text-align:right;
+  }
+
+  /* ---------- Footer / decisions ---------- */
+  .footer-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:28px;
+    margin-top:8px;
+  }
+  @media (max-width:680px){ .footer-grid{grid-template-columns:1fr;} }
+  .decision-list, .plan-list{
+    list-style:none; margin:0; padding:0; font-size:13.5px;
+  }
+  .decision-list li, .plan-list li{
+    display:flex; align-items:center; gap:6px;
+    padding:8px 0 8px 20px;
+    border-bottom:1px solid var(--rule);
+    position:relative;
+  }
+  .decision-list li::before{
+    content:"?";
+    position:absolute; left:0; top:8px;
+    font-family:"Fraunces", serif; font-weight:700; color:var(--stamp-red);
+  }
+  .plan-list li::before{
+    content:"→";
+    position:absolute; left:0; top:8px;
+    color:var(--ink-soft);
+  }
+  .decision-list input.field, .plan-list input.field{ flex:1; font-size:13.5px; }
+
+  .colophon{
+    margin-top:56px;
+    padding-top:14px;
+    border-top:1px solid var(--rule);
+    font-family:"IBM Plex Mono", monospace;
+    font-size:10.5px;
+    color:var(--gray);
+    display:flex;
+    justify-content:space-between;
+  }
+
+  .edit-only{}
+
+  @media print{
+    .edit-only, .save-bar{display:none !important;}
+    body{background:#fff;}
+    input.field, select.field, #projName{ border:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="masthead">
+    <div style="flex:1;">
+      <p class="eyebrow">Biweekly Review Ledger</p>
+      <input id="projName" value="新規サービス開発" aria-label="プロジェクト名">
+    </div>
+    <div class="period">
+      <div class="label">対象期間</div>
+      <div class="period-row">
+        <select id="periodSelect" aria-label="対象期間を選択"></select>
+        <button class="btn ghost-small edit-only" id="renamePeriodBtn" title="期間名を変更">✎</button>
+      </div>
+    </div>
+  </div>
+  <div class="subline">
+    <span>PMO定例 / 半月次振り返り</span>
+    <div class="toolbar edit-only">
+      <button class="btn" id="newPeriodBtn">＋ 次の期間をつくる(未完了を引き継ぐ)</button>
+      <button class="btn" id="reloadBtn">⟳ 手動で再読み込み</button>
+    </div>
+  </div>
+  <div id="banner"></div>
+  <div class="shared-note edit-only" id="sharedNote" style="display:none;">
+    <span class="sync-dot" id="syncDot"></span>
+    <span id="syncText">読み込み中…</span>
+    <span style="margin-left:auto;">⚠ このURLを知っている全員が同じ内容を編集できます</span>
+  </div>
+
+  <!-- 総合判定 -->
+  <div class="verdict-band">
+    <div class="vb-text">
+      <div class="vb-title">今期の総合判定</div>
+      <div class="vb-sub" id="verdictSub">3指標のうち最も厳しい判定を採用</div>
+    </div>
+    <div class="stamp" id="overallStamp"></div>
+  </div>
+
+  <!-- KPI ---------------------------------------------------------- -->
+  <div class="section-label">現状の振り返り(KPI)</div>
+  <table class="ledger">
+    <thead>
+      <tr>
+        <th>指標</th>
+        <th>目標</th>
+        <th>実績</th>
+        <th>差異</th>
+        <th style="min-width:150px;">達成率</th>
+        <th></th>
+        <th class="edit-only"></th>
+      </tr>
+    </thead>
+    <tbody id="kpiBody"></tbody>
+  </table>
+  <button class="add-row-btn edit-only" id="addKpiBtn">＋ 指標を追加</button>
+  <p class="kpi-note">判定基準:達成率 100%以上=◎ / 80〜100%=○ / 60〜80%=△(要注意) / 60%未満=×(要対応)。数値を入力すると自動計算されます。</p>
+
+  <!-- 課題 / 進捗 ---------------------------------------------------- -->
+  <div class="section-label">課題とプロジェクト進捗</div>
+  <div class="two-col">
+    <div>
+      <div style="font-size:12px; color:var(--ink-soft); margin-bottom:6px; font-family:'IBM Plex Mono',monospace;">ISSUES — 現状の課題</div>
+      <ul class="card-list" id="issueList"></ul>
+      <button class="add-row-btn edit-only" id="addIssueBtn">＋ 課題を追加</button>
+    </div>
+    <div>
+      <div style="font-size:12px; color:var(--ink-soft); margin-bottom:6px; font-family:'IBM Plex Mono',monospace;">TASKS — プロジェクト進行</div>
+      <ul class="card-list" id="taskList"></ul>
+      <button class="add-row-btn edit-only" id="addTaskBtn">＋ タスクを追加</button>
+    </div>
+  </div>
+
+  <!-- 判断事項 / 次回予定 --------------------------------------------- -->
+  <div class="section-label">判断が必要な事項 / 次回までの予定</div>
+  <div class="footer-grid">
+    <div>
+      <ul class="decision-list" id="decisionList"></ul>
+      <button class="add-row-btn edit-only" id="addDecisionBtn">＋ 追加</button>
+    </div>
+    <div>
+      <ul class="plan-list" id="planList"></ul>
+      <button class="add-row-btn edit-only" id="addPlanBtn">＋ 追加</button>
+    </div>
+  </div>
+
+  <div class="colophon">
+    <span>半月次振り返り帳</span>
+    <span>関係者共有用 / 会議前に一読ください</span>
+  </div>
+</div>
+
+<div class="save-bar edit-only">
+  <span class="hint" id="saveHint">読み込み中…</span>
+  <button class="btn ghost2" id="exportBtn" title="バックアップとしてローカルにも保存できます">⬇ バックアップ</button>
+  <button class="btn primary" id="saveBtn">今すぐ保存</button>
+</div>
+
+<script id="data-block">
+window.DEFAULT_PROJECT_NAME = "新規サービス開発";
+window.DEFAULT_PERIODS = [
+  {
+    id: "p1",
+    label: "2026/6 後半",
+    data: {
+      kpis: [
+        { name: "インプレッション数", target: 50000, actual: 48000, fmt: "int" },
+        { name: "問い合わせ数",       target: 120,   actual: 110,   fmt: "int" },
+        { name: "売上",               target: 3000000, actual: 2850000, fmt: "yen" }
+      ],
+      issues: [
+        { name: "LP離脱率が高い", status: "done", meta: "原因:モバイル表示崩れ / 対応:佐藤 / 期限:7/10" }
+      ],
+      tasks: [
+        { name: "会員登録フロー実装", pct: 100, status: "done", meta: "担当:山田" }
+      ],
+      decisions: [],
+      plans: ["7月前半のクリエイティブ差し替えを実施"]
+    }
+  },
+  {
+    id: "p2",
+    label: "2026/7 前半",
+    data: {
+      kpis: [
+        { name: "インプレッション数", target: 55000, actual: 57000, fmt: "int" },
+        { name: "問い合わせ数",       target: 130,   actual: 140,   fmt: "int" },
+        { name: "売上",               target: 3200000, actual: 3350000, fmt: "yen" }
+      ],
+      issues: [
+        { name: "問い合わせ数は達成も成約率が低下", status: "wip",  meta: "原因:商材とのミスマッチ / 対応:田中 / 期限:7/20" },
+        { name: "インプレッションが目標未達(前回)", status: "todo", meta: "原因:クリエイティブの摩耗 / 対応:鈴木 / 期限:7/25" }
+      ],
+      tasks: [
+        { name: "決済API連携",       pct: 60, status: "wip",  meta: "担当:伊藤 / 期限:7/10 / 外部ベンダー仕様確定遅れ" },
+        { name: "利用規約レビュー",   pct: 20, status: "todo", meta: "担当:法務 / 期限:7/25 / 法務側リソース不足" }
+      ],
+      decisions: ["問い合わせ時のヒアリング項目を見直すか"],
+      plans: ["新規クリエイティブ3パターンを投入", "決済APIの遅延リスクを次回までに再評価"]
+    }
+  },
+  {
+    id: "p3",
+    label: "2026/7 後半",
+    data: {
+      kpis: [
+        { name: "インプレッション数", target: 55000, actual: 0, fmt: "int" },
+        { name: "問い合わせ数",       target: 130,   actual: 0, fmt: "int" },
+        { name: "売上",               target: 3200000, actual: 0, fmt: "yen" }
+      ],
+      issues: [
+        { name: "問い合わせ時のヒアリング項目見直し", status: "wip", meta: "対応:田中 / 期限:7/20" }
+      ],
+      tasks: [
+        { name: "決済API連携", pct: 80, status: "wip", meta: "担当:伊藤 / 期限:7/24" }
+      ],
+      decisions: ["成約率低下の対応をこのまま継続するか"],
+      plans: ["実績入力後にKPIを更新してください"]
+    }
+  }
+];
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, onSnapshot, connectFirestoreEmulator
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+const $ = (id) => document.getElementById(id);
+
+const CONFIGURED = window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+const ROOM_ID = window.ROOM_ID || "default";
+
+let db = null;
+let meta = { projectName: window.DEFAULT_PROJECT_NAME, periodList: [] };
+let periodCache = {};   // id -> {kpis, issues, tasks, decisions, plans}
+let currentId = null;
+let dirty = false;
+let saveTimer = null;
+let unsubPeriod = null;
+let unsubMeta = null;
+
+/* ---------------- helpers ---------------- */
+function fmtNum(n, fmt){
+  n = Number(n) || 0;
+  if(fmt === "yen") return "¥" + n.toLocaleString("ja-JP");
+  return n.toLocaleString("ja-JP");
+}
+function judge(target, actual){
+  if(!actual) return "none";
+  const r = actual / target;
+  if(r >= 1) return "ok2";
+  if(r >= 0.8) return "ok";
+  if(r >= 0.6) return "warn";
+  return "bad";
+}
+function judgeMark(j){ return { ok2:"◎", ok:"○", warn:"△", bad:"×", none:"未" }[j]; }
+function judgeRank(j){ return { bad:0, none:0, warn:1, ok:2, ok2:3 }[j]; }
+function stampClass(j){
+  if(j === "ok2" || j === "ok") return "ok";
+  if(j === "warn") return "warn";
+  if(j === "none") return "none";
+  return "bad";
+}
+function escAttr(s){
+  return String(s ?? "").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+}
+function nowTime(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+function blankPeriodData(){
+  return { kpis: [], issues: [], tasks: [], decisions: [], plans: [] };
+}
+function currentPeriod(){ return periodCache[currentId]; }
+function newId(){ return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function setSync(state, text){
+  const dot = $("syncDot");
+  if(dot) dot.className = "sync-dot " + state;
+  const txt = $("syncText");
+  if(txt) txt.textContent = text;
+  const hint = $("saveHint");
+  if(hint) hint.textContent = text;
+}
+function isEditingFocused(){
+  const el = document.activeElement;
+  return !!(el && el.closest && el.closest(".sheet") && (el.tagName === "INPUT" || el.tagName === "SELECT"));
+}
+
+/* ---------------- Firestore refs ---------------- */
+function metaRef(){ return doc(db, "rooms", ROOM_ID, "meta", "info"); }
+function periodRef(id){ return doc(db, "rooms", ROOM_ID, "periods", id); }
+
+async function doCloudSave(){
+  if(!currentId) return;
+  setSync("saving", "保存中…");
+  try{
+    await setDoc(periodRef(currentId), periodCache[currentId]);
+    dirty = false;
+    setSync("saved", "保存しました " + nowTime());
+  }catch(e){
+    setSync("error", "保存に失敗しました:" + e.message);
+  }
+}
+async function saveMetaNow(){
+  try{
+    await setDoc(metaRef(), meta);
+  }catch(e){
+    setSync("error", "保存に失敗しました:" + e.message);
+  }
+}
+function scheduleAutosave(){
+  dirty = true;
+  setSync("dirty", "未保存の変更があります…");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(doCloudSave, 1200);
+}
+function persistStructuralChange(){
+  clearTimeout(saveTimer);
+  doCloudSave();
+}
+
+function subscribeToPeriod(id){
+  if(unsubPeriod) unsubPeriod();
+  unsubPeriod = onSnapshot(periodRef(id), (snap) => {
+    if(!snap.exists()) return;
+    if(dirty || isEditingFocused()) return; // avoid clobbering active typing
+    const data = snap.data();
+    if(JSON.stringify(data) === JSON.stringify(periodCache[id])) return;
+    periodCache[id] = data;
+    renderKpis(); renderIssues(); renderTasks(); renderDecisions(); renderPlans();
+    setSync("saved", "他のメンバーの更新を反映しました " + nowTime());
+  }, (err) => {
+    setSync("error", "同期エラー:" + err.message);
+  });
+}
+function subscribeToMeta(){
+  if(unsubMeta) unsubMeta();
+  unsubMeta = onSnapshot(metaRef(), (snap) => {
+    if(!snap.exists()) return;
+    const m = snap.data();
+    if(JSON.stringify(m) === JSON.stringify(meta)) return;
+    meta = m;
+    if(!meta.periodList.find(p => p.id === currentId)){
+      currentId = meta.periodList[meta.periodList.length - 1].id;
+      switchToPeriod(currentId);
+    }
+    renderPeriodSelect();
+  }, (err) => {
+    setSync("error", "同期エラー:" + err.message);
+  });
+}
+
+async function switchToPeriod(id){
+  currentId = id;
+  setSync("loading", "読み込み中…");
+  const snap = await getDoc(periodRef(id));
+  periodCache[id] = snap.exists() ? snap.data() : blankPeriodData();
+  subscribeToPeriod(id);
+  renderKpis(); renderIssues(); renderTasks(); renderDecisions(); renderPlans();
+  setSync("saved", "同期済み");
+}
+
+/* ---------------- init ---------------- */
+async function init(){
+  if(!CONFIGURED){
+    $("banner").innerHTML =
+      `<div class="banner error"><strong>Firebaseの設定が完了していません。</strong> ` +
+      `このHTMLファイルの &lt;head&gt; 内にある window.FIREBASE_CONFIG を、ご自身のFirebaseプロジェクトの値に書き換えてください。` +
+      `今はプレビューのみで、編集内容は保存されません。</div>`;
+    $("reloadBtn").style.display = "none";
+    $("sharedNote").style.display = "none";
+    meta = {
+      projectName: window.DEFAULT_PROJECT_NAME,
+      periodList: window.DEFAULT_PERIODS.map(p => ({ id:p.id, label:p.label }))
+    };
+    window.DEFAULT_PERIODS.forEach(p => { periodCache[p.id] = JSON.parse(JSON.stringify(p.data)); });
+    currentId = meta.periodList[meta.periodList.length - 1].id;
+    renderAll();
+    return;
+  }
+
+  try{
+    $("sharedNote").style.display = "flex";
+    setSync("loading", "接続中…");
+    const app = initializeApp(window.FIREBASE_CONFIG);
+    db = getFirestore(app);
+
+    let snap = await getDoc(metaRef());
+    if(!snap.exists()){
+      meta = {
+        projectName: window.DEFAULT_PROJECT_NAME,
+        periodList: window.DEFAULT_PERIODS.map(p => ({ id:p.id, label:p.label }))
+      };
+      await setDoc(metaRef(), meta);
+      for(const p of window.DEFAULT_PERIODS){
+        await setDoc(periodRef(p.id), p.data);
+      }
+    }else{
+      meta = snap.data();
+    }
+
+    currentId = meta.periodList[meta.periodList.length - 1].id;
+    const pSnap = await getDoc(periodRef(currentId));
+    periodCache[currentId] = pSnap.exists() ? pSnap.data() : blankPeriodData();
+
+    subscribeToPeriod(currentId);
+    subscribeToMeta();
+    setSync("saved", "同期済み");
+    renderAll();
+  }catch(e){
+    $("banner").innerHTML =
+      `<div class="banner error"><strong>Firebaseへの接続に失敗しました。</strong> ` +
+      `${escAttr(e.message)}<br>Firestoreのルールとプロジェクト設定を確認してください。` +
+      `</div>`;
+    $("reloadBtn").style.display = "none";
+    setSync("error", "接続エラー");
+    meta = {
+      projectName: window.DEFAULT_PROJECT_NAME,
+      periodList: window.DEFAULT_PERIODS.map(p => ({ id:p.id, label:p.label }))
+    };
+    window.DEFAULT_PERIODS.forEach(p => { periodCache[p.id] = JSON.parse(JSON.stringify(p.data)); });
+    currentId = meta.periodList[meta.periodList.length - 1].id;
+    renderAll();
+  }
+}
+
+/* ---------------- render ---------------- */
+function renderAll(){
+  renderPeriodSelect();
+  $("projName").value = meta.projectName;
+  renderKpis();
+  renderIssues();
+  renderTasks();
+  renderDecisions();
+  renderPlans();
+}
+
+function renderPeriodSelect(){
+  const sel = $("periodSelect");
+  sel.innerHTML = "";
+  meta.periodList.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.label;
+    sel.appendChild(opt);
+  });
+  sel.value = currentId;
+}
+
+function renderKpis(){
+  const body = $("kpiBody");
+  body.innerHTML = "";
+  const p = currentPeriod();
+  let worst = "ok2";
+
+  p.kpis.forEach((k, i) => {
+    const diff = (Number(k.actual)||0) - (Number(k.target)||0);
+    const rate = k.target ? (Number(k.actual)||0) / Number(k.target) : 0;
+    const j = judge(Number(k.target), Number(k.actual));
+    if(judgeRank(j) < judgeRank(worst)) worst = j;
+    const rateClass = j === "bad" ? "bad" : (j === "warn" ? "warn" : "ok");
+    const barWidth = Math.max(0, Math.min(rate, 1.3)) / 1.3 * 100;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><input class="field name-field" data-role="kpi-name" data-i="${i}" value="${escAttr(k.name)}"></td>
+      <td><input type="number" class="field num-field" data-role="kpi-target" data-i="${i}" value="${k.target}"></td>
+      <td><input type="number" class="field num-field" data-role="kpi-actual" data-i="${i}" value="${k.actual}"></td>
+      <td class="diff ${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '+' : ''}${fmtNum(diff, k.fmt)}</td>
+      <td class="rate-cell">
+        <span class="rate-track"><span class="rate-fill ${rateClass}" style="width:${barWidth}%"></span></span>
+        <span class="rate-num">${!k.actual ? '—' : (rate*100).toFixed(1) + '%'}</span>
+      </td>
+      <td class="stampcell"><div class="stamp small ${stampClass(j)}">${judgeMark(j)}</div></td>
+      <td class="delcell edit-only"><button class="del-btn" data-role="kpi-del" data-i="${i}" title="削除">✕</button></td>
+    `;
+    body.appendChild(tr);
+  });
+
+  const overallStamp = $("overallStamp");
+  overallStamp.className = "stamp " + stampClass(worst);
+  overallStamp.textContent = judgeMark(worst);
+  $("verdictSub").textContent = worst === "none" ? "実績が未入力の指標があります" : "3指標のうち最も厳しい判定を採用";
+}
+
+const issueStatusLabel = { todo:"未着手", wip:"対応中", hold:"保留", done:"完了" };
+function renderIssues(){
+  const list = $("issueList");
+  list.innerHTML = "";
+  const p = currentPeriod();
+  if(p.issues.length === 0){
+    list.innerHTML = `<li class="issue-row" style="color:var(--ink-soft); font-size:13px;">今期の登録課題はありません</li>`;
+  }
+  p.issues.forEach((it, i) => {
+    const li = document.createElement("li");
+    li.className = "issue-row";
+    li.innerHTML = `
+      <div class="row-top">
+        <input class="field name-field" data-role="issue-name" data-i="${i}" value="${escAttr(it.name)}">
+        <select class="pill-select field ${it.status}" data-role="issue-status" data-i="${i}">
+          ${Object.entries(issueStatusLabel).map(([v,l]) => `<option value="${v}" ${v===it.status?'selected':''}>${l}</option>`).join("")}
+        </select>
+        <button class="del-btn edit-only" data-role="issue-del" data-i="${i}" title="削除">✕</button>
+      </div>
+      <div class="row-meta"><input class="field" data-role="issue-meta" data-i="${i}" value="${escAttr(it.meta)}" placeholder="原因/対応/担当/期限"></div>
+    `;
+    list.appendChild(li);
+  });
+}
+
+const taskStatusLabel = { wip:"進行中", late:"遅延", done:"完了", todo:"未着手" };
+function renderTasks(){
+  const list = $("taskList");
+  list.innerHTML = "";
+  const p = currentPeriod();
+  if(p.tasks.length === 0){
+    list.innerHTML = `<li class="task-row" style="color:var(--ink-soft); font-size:13px;">今期の登録タスクはありません</li>`;
+  }
+  p.tasks.forEach((t, i) => {
+    const li = document.createElement("li");
+    li.className = "task-row";
+    const fillClass = t.status === "late" ? "late" : (t.status === "done" ? "done" : "");
+    li.innerHTML = `
+      <div class="row-top">
+        <input class="field name-field" data-role="task-name" data-i="${i}" value="${escAttr(t.name)}">
+        <select class="pill-select field ${t.status === 'late' ? 'todo' : (t.status === 'done' ? 'done' : 'wip')}" data-role="task-status" data-i="${i}">
+          ${Object.entries(taskStatusLabel).map(([v,l]) => `<option value="${v}" ${v===t.status?'selected':''}>${l}</option>`).join("")}
+        </select>
+        <button class="del-btn edit-only" data-role="task-del" data-i="${i}" title="削除">✕</button>
+      </div>
+      <div class="task-progress">
+        <div class="track"><div class="fill ${fillClass}" style="width:${t.pct}%"></div></div>
+        <input type="number" min="0" max="100" class="field pct-input" data-role="task-pct" data-i="${i}" value="${t.pct}">%
+      </div>
+      <div class="row-meta"><input class="field" data-role="task-meta" data-i="${i}" value="${escAttr(t.meta)}" placeholder="担当/期限/補足"></div>
+    `;
+    list.appendChild(li);
+  });
+}
+
+function renderDecisions(){
+  const list = $("decisionList");
+  list.innerHTML = "";
+  const p = currentPeriod();
+  if(p.decisions.length === 0){
+    list.innerHTML = `<li style="color:var(--ink-soft);">保留中の意思決定事項はありません</li>`;
+  }
+  p.decisions.forEach((d, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<input class="field" data-role="decision" data-i="${i}" value="${escAttr(d)}"><button class="del-btn edit-only" data-role="decision-del" data-i="${i}">✕</button>`;
+    list.appendChild(li);
+  });
+}
+
+function renderPlans(){
+  const list = $("planList");
+  list.innerHTML = "";
+  const p = currentPeriod();
+  if(p.plans.length === 0){
+    list.innerHTML = `<li style="color:var(--ink-soft);">次回予定は未記入です</li>`;
+  }
+  p.plans.forEach((pl, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<input class="field" data-role="plan" data-i="${i}" value="${escAttr(pl)}"><button class="del-btn edit-only" data-role="plan-del" data-i="${i}">✕</button>`;
+    list.appendChild(li);
+  });
+}
+
+function updateKpiRow(i){
+  const k = currentPeriod().kpis[i];
+  const targetInput = document.querySelector(`[data-role="kpi-target"][data-i="${i}"]`);
+  if(!targetInput) return;
+  const row = targetInput.closest("tr");
+
+  const diff = (Number(k.actual)||0) - (Number(k.target)||0);
+  const rate = k.target ? (Number(k.actual)||0) / Number(k.target) : 0;
+  const j = judge(Number(k.target), Number(k.actual));
+  const rateClass = j === "bad" ? "bad" : (j === "warn" ? "warn" : "ok");
+  const barWidth = Math.max(0, Math.min(rate, 1.3)) / 1.3 * 100;
+
+  const diffCell = row.querySelector(".diff");
+  diffCell.className = "diff " + (diff >= 0 ? "pos" : "neg");
+  diffCell.textContent = (diff >= 0 ? "+" : "") + fmtNum(diff, k.fmt);
+
+  const fill = row.querySelector(".rate-fill");
+  fill.className = "rate-fill " + rateClass;
+  fill.style.width = barWidth + "%";
+
+  row.querySelector(".rate-num").textContent = !k.actual ? "—" : (rate*100).toFixed(1) + "%";
+
+  const stamp = row.querySelector(".stamp");
+  stamp.className = "stamp small " + stampClass(j);
+  stamp.textContent = judgeMark(j);
+}
+
+function updateOverallVerdict(){
+  const p = currentPeriod();
+  let worst = "ok2";
+  p.kpis.forEach(k => {
+    const j = judge(Number(k.target), Number(k.actual));
+    if(judgeRank(j) < judgeRank(worst)) worst = j;
+  });
+  const overallStamp = $("overallStamp");
+  overallStamp.className = "stamp " + stampClass(worst);
+  overallStamp.textContent = judgeMark(worst);
+  $("verdictSub").textContent = worst === "none" ? "実績が未入力の指標があります" : "3指標のうち最も厳しい判定を採用";
+}
+
+function updateTaskRow(i){
+  const t = currentPeriod().tasks[i];
+  const pctInput = document.querySelector(`[data-role="task-pct"][data-i="${i}"]`);
+  if(!pctInput) return;
+  const row = pctInput.closest("li");
+  const fill = row.querySelector(".fill");
+  fill.style.width = t.pct + "%";
+}
+
+/* ---------------- event delegation ---------------- */
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  const role = t.dataset.role;
+  const i = t.dataset.i !== undefined ? Number(t.dataset.i) : null;
+  if(!role || !currentId) return;
+  const p = currentPeriod();
+
+  switch(role){
+    case "kpi-name":   p.kpis[i].name = t.value; scheduleAutosave(); break;
+    case "kpi-target":
+      p.kpis[i].target = Number(t.value) || 0;
+      updateKpiRow(i); updateOverallVerdict(); scheduleAutosave();
+      return;
+    case "kpi-actual":
+      p.kpis[i].actual = Number(t.value) || 0;
+      updateKpiRow(i); updateOverallVerdict(); scheduleAutosave();
+      return;
+    case "issue-name": p.issues[i].name = t.value; scheduleAutosave(); break;
+    case "issue-meta": p.issues[i].meta = t.value; scheduleAutosave(); break;
+    case "task-name":  p.tasks[i].name = t.value; scheduleAutosave(); break;
+    case "task-meta":  p.tasks[i].meta = t.value; scheduleAutosave(); break;
+    case "task-pct":
+      p.tasks[i].pct = Math.max(0, Math.min(100, Number(t.value) || 0));
+      updateTaskRow(i); scheduleAutosave();
+      return;
+    case "decision":   p.decisions[i] = t.value; scheduleAutosave(); break;
+    case "plan":       p.plans[i] = t.value; scheduleAutosave(); break;
+  }
+});
+
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  const role = t.dataset.role;
+  const i = t.dataset.i !== undefined ? Number(t.dataset.i) : null;
+  if(!currentId) return;
+  const p = currentPeriod();
+
+  if(role === "issue-status"){ p.issues[i].status = t.value; renderIssues(); persistStructuralChange(); }
+  if(role === "task-status"){ p.tasks[i].status = t.value; renderTasks(); persistStructuralChange(); }
+});
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-role]");
+  if(!t || !currentId) return;
+  const role = t.dataset.role;
+  const i = t.dataset.i !== undefined ? Number(t.dataset.i) : null;
+  const p = currentPeriod();
+
+  if(role === "kpi-del"){ p.kpis.splice(i,1); renderKpis(); persistStructuralChange(); }
+  if(role === "issue-del"){ p.issues.splice(i,1); renderIssues(); persistStructuralChange(); }
+  if(role === "task-del"){ p.tasks.splice(i,1); renderTasks(); persistStructuralChange(); }
+  if(role === "decision-del"){ p.decisions.splice(i,1); renderDecisions(); persistStructuralChange(); }
+  if(role === "plan-del"){ p.plans.splice(i,1); renderPlans(); persistStructuralChange(); }
+});
+
+$("projName").addEventListener("input", (e) => { meta.projectName = e.target.value; });
+$("projName").addEventListener("change", () => { if(CONFIGURED) saveMetaNow(); });
+
+$("periodSelect").addEventListener("change", async (e) => {
+  await switchToPeriod(e.target.value);
+});
+
+$("renamePeriodBtn").addEventListener("click", () => {
+  if(!currentId) return;
+  const entry = meta.periodList.find(p => p.id === currentId);
+  const name = prompt("期間名を入力してください(例:2026/8 前半)", entry.label);
+  if(name){ entry.label = name; renderPeriodSelect(); if(CONFIGURED) saveMetaNow(); }
+});
+
+$("addKpiBtn").addEventListener("click", () => {
+  currentPeriod().kpis.push({ name:"新しい指標", target:0, actual:0, fmt:"int" });
+  renderKpis(); persistStructuralChange();
+});
+$("addIssueBtn").addEventListener("click", () => {
+  currentPeriod().issues.push({ name:"新しい課題", status:"todo", meta:"" });
+  renderIssues(); persistStructuralChange();
+});
+$("addTaskBtn").addEventListener("click", () => {
+  currentPeriod().tasks.push({ name:"新しいタスク", pct:0, status:"todo", meta:"" });
+  renderTasks(); persistStructuralChange();
+});
+$("addDecisionBtn").addEventListener("click", () => {
+  currentPeriod().decisions.push("");
+  renderDecisions(); persistStructuralChange();
+});
+$("addPlanBtn").addEventListener("click", () => {
+  currentPeriod().plans.push("");
+  renderPlans(); persistStructuralChange();
+});
+
+$("newPeriodBtn").addEventListener("click", async () => {
+  const label = prompt("新しい期間名を入力してください(例:2026/8 前半)", "");
+  if(!label || !currentId) return;
+  const cur = currentPeriod();
+  const next = {
+    kpis: cur.kpis.map(k => ({ name:k.name, target:k.target, actual:0, fmt:k.fmt })),
+    issues: cur.issues.filter(it => it.status !== "done").map(it => ({...it})),
+    tasks: cur.tasks.filter(t => t.pct < 100).map(t => ({...t})),
+    decisions: cur.decisions.filter(d => d && d.trim() !== "").map(d => d),
+    plans: []
+  };
+  const id = newId();
+  meta.periodList.push({ id, label });
+  periodCache[id] = next;
+  currentId = id;
+  subscribeToPeriod(id);
+  renderAll();
+  if(CONFIGURED){
+    setSync("saving", "作成中…");
+    await saveMetaNow();
+    await setDoc(periodRef(id), next);
+    setSync("saved", "作成しました " + nowTime());
+  }
+});
+
+$("reloadBtn").addEventListener("click", async () => {
+  if(!CONFIGURED || !currentId) return;
+  if(dirty && !confirm("未保存の変更があります。破棄して最新を読み込みますか？")) return;
+  setSync("loading", "読み込み中…");
+  const m = await getDoc(metaRef());
+  if(m.exists()) meta = m.data();
+  if(!meta.periodList.find(p => p.id === currentId)){
+    currentId = meta.periodList[meta.periodList.length - 1].id;
+  }
+  const data = await getDoc(periodRef(currentId));
+  if(data.exists()) periodCache[currentId] = data.data();
+  dirty = false;
+  renderAll();
+  setSync("saved", "最新を読み込みました " + nowTime());
+});
+
+async function exportSnapshot(){
+  if(CONFIGURED){
+    for(const p of meta.periodList){
+      if(!periodCache[p.id]){
+        const snap = await getDoc(periodRef(p.id));
+        periodCache[p.id] = snap.exists() ? snap.data() : blankPeriodData();
+      }
+    }
+  }
+  const dataScript = document.getElementById("data-block");
+  const periodsArr = meta.periodList.map(p => ({ id:p.id, label:p.label, data:periodCache[p.id] }));
+  dataScript.textContent =
+`window.DEFAULT_PROJECT_NAME = ${JSON.stringify(meta.projectName)};
+window.DEFAULT_PERIODS = ${JSON.stringify(periodsArr, null, 2)};`;
+
+  const htmlStr = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+  const blob = new Blob([htmlStr], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `振り返り帳_${stamp}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+$("exportBtn").addEventListener("click", exportSnapshot);
+$("saveBtn").addEventListener("click", () => {
+  if(CONFIGURED && currentId){ clearTimeout(saveTimer); doCloudSave(); }
+  else{ exportSnapshot(); }
+});
+
+init();
+</script>
+</body>
+</html>
